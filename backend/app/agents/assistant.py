@@ -18,7 +18,11 @@ from pydantic_ai.messages import (
     ToolReturnPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
+from pydantic_ai.models.fallback import FallbackModel
+from pydantic_ai.models.ollama import OllamaModel
 from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.providers.ollama import OllamaProvider
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 from pydantic_ai_harness.memory import Memory
@@ -33,12 +37,32 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
-def _build_model(model_name: str) -> OpenAIResponsesModel:
-    """OpenAI-only deployment."""
+def _openai_model(model_name: str) -> OpenAIResponsesModel:
     return OpenAIResponsesModel(
         model_name or settings.AI_MODEL,
         provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
     )
+
+
+def _ollama_model(model_name: str) -> OllamaModel:
+    return OllamaModel(
+        model_name or settings.OLLAMA_MODEL,
+        provider=OllamaProvider(
+            base_url=settings.OLLAMA_BASE_URL,
+            api_key=settings.OLLAMA_API_KEY,
+        ),
+    )
+
+
+def _build_model(model_name: str) -> Model:
+    """Build the configured primary model, with an optional OpenAI fallback."""
+    if settings.LLM_PROVIDER == "openai":
+        return _openai_model(model_name)
+
+    primary = _ollama_model(model_name)
+    if settings.LLM_FALLBACK_PROVIDER == "openai" and settings.OPENAI_API_KEY:
+        return FallbackModel(primary, _openai_model(settings.AI_MODEL))
+    return primary
 
 
 AskUserCallback = Callable[[list[dict[str, Any]]], Awaitable[list[dict[str, Any]]]]
@@ -64,7 +88,9 @@ class AssistantAgent:
         memory_capability: "Memory[Deps] | None" = None,
     ):
         self.memory_capability = memory_capability
-        self.model_name = model_name or settings.AI_MODEL
+        self.model_name = model_name or (
+            settings.OLLAMA_MODEL if settings.LLM_PROVIDER == "ollama" else settings.AI_MODEL
+        )
         # ``temperature`` stays ``None`` when caller didn't set it — don't fall
         # back to settings.AI_TEMPERATURE here. Reasoning/o-series models
         # (gpt-5.5, o1, …) reject the parameter entirely, so we only forward
@@ -73,7 +99,11 @@ class AssistantAgent:
         self.thinking_effort = (
             thinking_effort
             if thinking_effort is not None
-            else (settings.AI_THINKING_EFFORT if settings.AI_THINKING_ENABLED else None)
+            else (
+                settings.AI_THINKING_EFFORT
+                if settings.AI_THINKING_ENABLED and settings.LLM_PROVIDER == "openai"
+                else None
+            )
         )
         self.system_prompt = system_prompt or get_system_prompt_with_rag()
         self._agent: Agent[Deps, str] | None = None

@@ -27,6 +27,8 @@ services:
       - REDIS_HOST=redis
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     networks:
       - backend
@@ -39,7 +41,8 @@ services:
 
 
   db:
-    image: postgres:16-alpine
+    # The RAG vector store executes CREATE EXTENSION vector on first use.
+    image: pgvector/pgvector:pg16
     container_name: maintenance_ai_platform_complete_db
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
@@ -89,6 +92,8 @@ services:
       - REDIS_HOST=redis
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - backend
     depends_on:

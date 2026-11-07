@@ -132,6 +132,16 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/0"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/0"
+    # Ollama is the default inference provider so local development does not
+    # send prompts to a paid API. Set LLM_FALLBACK_PROVIDER=openai plus an API
+    # key when a hosted fallback is desired.
+    LLM_PROVIDER: Literal["ollama", "openai"] = "ollama"
+    LLM_FALLBACK_PROVIDER: Literal["openai", "none"] = "openai"
+    OLLAMA_BASE_URL: str = "http://host.docker.internal:11434/v1"
+    OLLAMA_API_KEY: str | None = None
+    OLLAMA_MODEL: str = "qwen3:4b"
+    OLLAMA_AVAILABLE_MODELS: list[str] = ["qwen3:4b"]
+
     OPENAI_API_KEY: str = ""
     AI_MODEL: str = "gpt-5.5"
     AI_TEMPERATURE: float = 0.7
@@ -150,13 +160,15 @@ class Settings(BaseSettings):
         "gpt-4.1",
     ]
     AI_FRAMEWORK: str = "pydantic_ai"
-    LLM_PROVIDER: str = "openai"
 
     # Persistent per-user agent memory (pydantic-ai-harness), stored in the
     # self-managed Postgres table ``agent_memory``.
     ENABLE_MEMORY: bool = False
     # Vector Database (pgvector) — uses existing PostgreSQL
-    EMBEDDING_MODEL: str = "text-embedding-3-large"
+    EMBEDDING_PROVIDER: Literal["ollama", "openai"] = "ollama"
+    OLLAMA_EMBEDDINGS_URL: str = "http://host.docker.internal:11434/api/embed"
+    OLLAMA_EMBEDDING_MODEL: str = "nomic-embed-text"
+    EMBEDDING_MODEL: str = "nomic-embed-text"
 
     RAG_CHUNK_SIZE: int = 512
     RAG_CHUNK_OVERLAP: int = 50
@@ -199,7 +211,13 @@ class Settings(BaseSettings):
             chunking_strategy=self.RAG_CHUNKING_STRATEGY,
             enable_hybrid_search=self.RAG_HYBRID_SEARCH,
             enable_ocr=self.RAG_ENABLE_OCR,
-            embeddings_config=EmbeddingsConfig(model=self.EMBEDDING_MODEL),
+            embeddings_config=EmbeddingsConfig(
+                model=(
+                    self.OLLAMA_EMBEDDING_MODEL
+                    if self.EMBEDDING_PROVIDER == "ollama"
+                    else self.EMBEDDING_MODEL
+                )
+            ),
             document_parser=DocumentParser(),
             pdf_parser=pdf_parser,
         )

@@ -1,13 +1,14 @@
 """Tests for AI agent module (PydanticAI)."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from pydantic_ai.models.test import TestModel
 
-from app.agents.assistant import AssistantAgent, Deps, get_agent
+from app.agents.assistant import AssistantAgent, Deps, _build_model, get_agent
 from app.agents.prompts import get_system_prompt_with_rag
 from app.agents.utils import get_current_datetime
+from app.core.config import settings
 
 
 class TestDeps:
@@ -59,6 +60,23 @@ class TestAssistantAgent:
         assert agent.model_name == "gpt-4"
         assert agent.temperature == 0.5
         assert agent.system_prompt == "Custom prompt"
+
+    def test_ollama_is_the_primary_model_provider(self, monkeypatch):
+        """Ollama is selected first and OpenAI is not constructed without a key."""
+        local_model = MagicMock()
+        ollama_factory = MagicMock(return_value=local_model)
+        openai_factory = MagicMock()
+        monkeypatch.setattr(settings, "LLM_PROVIDER", "ollama")
+        monkeypatch.setattr(settings, "LLM_FALLBACK_PROVIDER", "openai")
+        monkeypatch.setattr(settings, "OPENAI_API_KEY", "")
+        with (
+            patch("app.agents.assistant._ollama_model", ollama_factory),
+            patch("app.agents.assistant._openai_model", openai_factory),
+        ):
+            assert _build_model("qwen3:4b") is local_model
+
+        ollama_factory.assert_called_once_with("qwen3:4b")
+        openai_factory.assert_not_called()
 
     # ``_build_model`` is the single per-provider model factory in
     # assistant.py, so patching it keeps these tests provider-agnostic

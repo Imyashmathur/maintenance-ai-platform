@@ -21,6 +21,11 @@ manager = AgentConnectionManager()
 @router.get("/agent/models", response_model=AgentModelsResponse)
 async def list_models() -> dict[str, Any]:
     """Return available LLM models and the current default."""
+    if settings.LLM_PROVIDER == "ollama":
+        return {
+            "default": settings.OLLAMA_MODEL,
+            "models": settings.OLLAMA_AVAILABLE_MODELS,
+        }
     return {
         "default": settings.AI_MODEL,
         "models": settings.AI_AVAILABLE_MODELS,
